@@ -284,7 +284,7 @@ senators_vv %>%
                   aes(label = incumbent),min.segment.length = 0.01) +
   labs(x = 'Most recent vote margin over expectations**',
        y = 'DW-NOMINATE "ideology" score over over replacement senator',
-       title = "Value Above Replacement Senators (VARS) for Democrats",
+       title = "Value Above Replacement Senator (VARS) for Democrats",
        col = 'Home state \npartisan lean*',
        caption = "*At the time of the senator's most recent election\n**Controlling for state partisan lean, year, and  region") +
   scale_x_continuous(breaks = seq(-0.5,0.5,00.1), 
