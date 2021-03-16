@@ -1,0 +1,52 @@
+state_abbv,state_fips,state_name,region,region_computed
+AL,1,Alabama,East South Central,Deep South
+AK,2,Alaska,Mountain,Mountain West
+AZ,4,Arizona,Southeast,Southeast
+AR,5,Arkansas,East South Central,Appalachia & Farmland
+CA,6,California,Pacific,Pacific
+CO,8,Colorado,Mountain,Southeast
+CT,9,Connecticut,New England,Middle Atlantic
+DE,10,Delaware,South Atlantic,Middle Atlantic
+DC,11,District of Columbia,Middle Atlantic,Middle Atlantic
+FL,12,Florida,South Atlantic,South Atlantic
+GA,13,Georgia,South Atlantic,South Atlantic
+HI,15,Hawaii,Pacific,Pacific
+ID,16,Idaho,Mountain,Mountain West
+IL,17,Illinois,East North Central,Middle Atlantic
+IN,18,Indiana,East North Central,Appalachia & Farmland
+IA,19,Iowa,West North Central,Midwest
+KS,20,Kansas,West North Central,Appalachia & Farmland
+KY,21,Kentucky,East South Central,Appalachia & Farmland
+LA,22,Louisiana,East South Central,Deep South
+ME,23,Maine,New England,New England
+MD,24,Maryland,Middle Atlantic,Middle Atlantic
+MA,25,Massachusetts,New England,Middle Atlantic
+MI,26,Michigan,East North Central,Midwest
+MN,27,Minnesota,West North Central,Midwest
+MS,28,Mississippi,East South Central,Deep South
+MO,29,Missouri,West North Central,Appalachia & Farmland
+MT,30,Montana,Mountain,Mountain West
+NE,31,Nebraska,West North Central,Mountain West
+NV,32,Nevada,Southeast,Southeast
+NH,33,New Hampshire,New England,New England
+NJ,34,New Jersey,Middle Atlantic,Middle Atlantic
+NM,35,New Mexico,Southeast,Southeast
+NY,36,New York,Middle Atlantic,Middle Atlantic
+NC,37,North Carolina,South Atlantic,South Atlantic
+ND,38,North Dakota,West North Central,Mountain West
+OH,39,Ohio,East North Central,Midwest
+OK,40,Oklahoma,Southeast,Appalachia & Farmland
+OR,41,Oregon,Pacific,Pacific
+PA,42,Pennsylvania,Middle Atlantic,Midwest
+RI,44,Rhode Island,New England,Middle Atlantic
+SC,45,South Carolina,South Atlantic,Deep South
+SD,46,South Dakota,West North Central,Mountain West
+TN,47,Tennessee,East South Central,Appalachia & Farmland
+TX,48,Texas,Southeast,Southeast
+UT,49,Utah,Mountain,Mountain West
+VT,50,Vermont,New England,New England
+VA,51,Virginia,South Atlantic,Middle Atlantic
+WA,53,Washington,Pacific,Pacific
+WV,54,West Virginia,East South Central,Appalachia & Farmland
+WI,55,Wisconsin,East North Central,Midwest
+WY,56,Wyoming,Mountain,Mountain West
