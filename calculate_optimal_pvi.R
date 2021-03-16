@@ -1,8 +1,10 @@
 library(tidyverse)
+library(zoo)
 
 # senate data -------------------------------------------------------------
 senate <- read_csv('data/1964-2020-election-results.csv') %>%
   filter(contested_election == TRUE,
+         !is.na(winning_party),
          election_year >= 1980) %>%
   select(year = election_year,
          state_abbv = state,
@@ -60,15 +62,26 @@ pvi <- pres %>%
   na.omit %>%
   select(-c(dem_margin,lag_dem_margin,dem_national_margin))
 
-# merge margins, carrying forward for midterm elecs
+# merge margins, carrying forward from last pres elec for midterm elecs
 senate <- senate %>% 
-  mutate(year_actual = year,
-         year = ifelse(year %% 4 != 0, year - 2, year)) %>%
-  left_join(pvi) %>% 
-  mutate(year = year_actual) %>%
-  select(-year_actual) %>% 
-  na.omit  %>%
-  ungroup()
+  left_join(pvi)
+
+senate <- senate %>%
+  filter(!is.na(dem_margin_lean)) %>%
+  bind_rows(
+    senate %>% 
+      filter(is.na(dem_margin_lean)) %>%
+      select(-c(dem_margin_lean, lag_dem_margin_lean)) %>%
+      mutate(year = year - 2) %>%
+      left_join(pvi, by = c("year","state_abbv")) %>%
+      mutate(year = year + 2)
+  )
+
+# if any stragglers, na.locf
+senate <- senate %>%
+  group_by(state_abbv) %>%
+  mutate(dem_margin_lean = na.locf(dem_margin_lean,na.rm=T),
+         lag_dem_margin_lean = na.locf(lag_dem_margin_lean,na.rm=T))
 
 unique(senate$year)
 

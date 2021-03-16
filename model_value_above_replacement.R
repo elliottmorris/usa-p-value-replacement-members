@@ -60,7 +60,8 @@ senators <- senate %>%
          winner_expected, winner_actual,
          year,
          last_elec, region) %>% 
-  arrange(desc(winner_v_expectations_residualized)) 
+  arrange(desc(winner_v_expectations_residualized))  %>%
+  ungroup()
 
 senators %>% filter(last_elec == 1) %>% head(10)
 
@@ -70,7 +71,8 @@ senators %>% filter(last_elec == 1) %>% head(10)
 voteview <- read_csv('data/Sall_members.csv') %>% 
   filter(congress >= 94, 
          state_abbrev != "USA",
-         !is.na(nominate_number_of_votes)) 
+         !is.na(nominate_number_of_votes)) %>%
+  rename(state_abbv = state_abbrev)
 
 # join senate reuslts with next-session scores, by last name
 voteview <- voteview %>% 
@@ -81,9 +83,11 @@ voteview <- voteview %>%
 
 # do the join
 senators_vv <- senators %>%
-  left_join(voteview %>% select(year, incumbent=last_name, 
-                                nokken_poole_dim1, nominate_dim1, nominate_number_of_votes), 
-            by = c("year","incumbent")) %>%
+  mutate(state_abbv = gsub("\\..*$","",seat)) %>% 
+  left_join(voteview %>% 
+              select(year, state_abbv, incumbent=last_name, 
+                     nokken_poole_dim1, nominate_dim1, nominate_number_of_votes), 
+            by = c("year","state_abbv","incumbent")) %>%
   ungroup()
 
 # for senators without a lot of votes, puch ideology scores back to party average
@@ -118,7 +122,7 @@ senators_vv %>%
                      labels = function(x){round(x*100)}) +
   geom_smooth(method='lm',se=F,aes(group=1),col='black',linetype=2) +
   geom_smooth(method='lm',se=F,alpha=0.5,size=0.8,linetype=2) +
-  labs(x="Home state's federal partisan voting index*",
+  labs(x="Home state's federal partisan lean*",
        y='DW-NOMINATE "ideology" scores',
        caption="*At the time of the senator's most recent election",
        col='Party') +
@@ -156,10 +160,10 @@ senators_train <- model.matrix(ideology_score ~ ., data = senators_train)  %>%
 # specify that the resampling method is 
 fit_control <- trainControl(## 10-fold CV
   method = "cv",
-  number = 10,
+  number = 5,
   verbose = TRUE,
   savePredictions="final",
-  index = createResample(senators_train$ideology_score, 10))
+  index = createResample(senators_train$ideology_score, 5))
 
 # fit a ranger model
 ranger_fit <- train(ideology_score ~ .*.,
@@ -278,11 +282,11 @@ senators_vv %>%
   geom_point(alpha = 0.5) +
   geom_text_repel(data = . %>% filter(incumbent %in% toupper(highlight_list)),
                   aes(label = incumbent),min.segment.length = 0.01) +
-  labs(x = 'Most recent vote margin over expectations',
-       y = 'DW-NOMINATE score for ideology over replacement senator',
+  labs(x = 'Most recent vote margin over expectations**',
+       y = 'DW-NOMINATE "ideology" score over over replacement senator',
        title = "Value Above Replacement Senators (VARS) for Democrats",
-       col='Home state \npartisan lean*',
-       caption="*At the time of the senator's most recent election") +
+       col = 'Home state \npartisan lean*',
+       caption = "*At the time of the senator's most recent election\n**Controlling for state partisan lean, year, and  region") +
   scale_x_continuous(breaks = seq(-0.5,0.5,00.1), 
                      labels = function(x){round(x*100)}) +
   theme_minimal() +
