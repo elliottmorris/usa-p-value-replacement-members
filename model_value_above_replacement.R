@@ -105,7 +105,7 @@ highlight_list <- c('warren', 'booker', 'manchin', 'sinema', 'tester', 'capito',
                     'romney', 'collins', 'lee', 'sanders', 'ossoff', 'gillibrand', 
                     'schatz', 'murkowski','baldwin','leahy','cruz','blackburn',
                     'scott','hawley','cornyn','young','coons','murphy','warnock',
-                    'klobuchar','shaheen')
+                    'klobuchar','shaheen','hassan','brown')
 
 senators_vv %>%
   filter(last_elec == 1) %>%
@@ -120,7 +120,7 @@ senators_vv %>%
   geom_smooth(method='lm',se=F,alpha=0.5,size=0.8,linetype=2) +
   labs(x="Home state's federal partisan voting index*",
        y='DW-NOMINATE "ideology" scores',
-       caption="*At the senator's most recent election",
+       caption="*At the time of the senator's most recent election",
        col='Party') +
   theme_minimal() +
   theme(panel.grid.minor = element_blank(),
@@ -268,19 +268,26 @@ senators_vv <- senators_vv %>%
 # most valuable dems
 senators_vv %>%
   filter(last_elec == 1, party == "D") %>%
-  group_by(incumbent) %>%
+  group_by(incumbent,pvi=pvi*100) %>%
   summarize(average_VARS = mean(ideology_over_replacement_senator),
             winner_v_expectations_residualized) %>%
   arrange(average_VARS) %>%
-  ggplot(., aes(x=winner_v_expectations_residualized, y=-average_VARS)) +
+  ggplot(., aes(x=winner_v_expectations_residualized, y=-average_VARS,
+                col=pvi)) +
+  scale_color_gradient2(high="#3498DB",low="#E74C3C",mid='#6D6D6D',midpoint=0) +
   geom_point(alpha = 0.5) +
-  geom_text_repel(#data = . %>% filter(incumbent %in% toupper(highlight_list)),
+  geom_text_repel(data = . %>% filter(incumbent %in% toupper(highlight_list)),
                   aes(label = incumbent),min.segment.length = 0.01) +
   labs(x = 'Most recent vote margin over expectations',
        y = 'DW-NOMINATE score for ideology over replacement senator',
-       title = "Value Above Replacement Senators (VARS) for Democrats") +
-  theme_minimal() +
+       title = "Value Above Replacement Senators (VARS) for Democrats",
+       col='Home state \npartisan lean*',
+       caption="*At the time of the senator's most recent election") +
   scale_x_continuous(breaks = seq(-0.5,0.5,00.1), 
-                     labels = function(x){round(x*100)}) 
+                     labels = function(x){round(x*100)}) +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank(),
+        plot.caption = element_text(hjust=1),
+        legend.position = c(0.85,0.4))
 
 ggsave("VARS.png",width=8,height=6)
