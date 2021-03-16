@@ -1,6 +1,10 @@
 library(tidyverse)
 library(ggrepel)
-library(lme4)
+library(blme)
+library(caret)
+library(caretEnsemble)
+
+source("calculate_optimal_pvi.R")
 
 # an improvement upon https://fivethirtyeight.com/features/bayh-like-other-moderates-was-valuable/
 # using geographic and other ancillary information to improve ideology estimates
@@ -55,7 +59,7 @@ senators <- senate %>%
          winner_v_expectations_residualized,
          winner_expected, winner_actual,
          year,
-         last_elec) %>% 
+         last_elec, region) %>% 
   arrange(desc(winner_v_expectations_residualized)) 
 
 senators %>% filter(last_elec == 1) %>% head(10)
@@ -64,7 +68,9 @@ senators %>% filter(last_elec == 1) %>% head(10)
 # policy value over replacement -------------------------------------------
 # read in the voteview nominate numbers
 voteview <- read_csv('data/Sall_members.csv') %>% 
-  filter(congress >= 94)
+  filter(congress >= 94, 
+         state_abbrev != "USA",
+         !is.na(nominate_number_of_votes)) 
 
 # join senate reuslts with next-session scores, by last name
 voteview <- voteview %>% 
@@ -76,25 +82,36 @@ voteview <- voteview %>%
 # do the join
 senators_vv <- senators %>%
   left_join(voteview %>% select(year, incumbent=last_name, 
-                                nokken_poole_dim1, nominate_dim1), 
-            by = c("year","incumbent"))
+                                nokken_poole_dim1, nominate_dim1, nominate_number_of_votes), 
+            by = c("year","incumbent")) %>%
+  ungroup()
 
-
+# for senators without a lot of votes, puch ideology scores back to party average
+senators_vv <- senators_vv %>% 
+  group_by(incumbent,party,state=substr(seat,1,2)) %>%
+  mutate(lifetime_votes = sum(nominate_number_of_votes, na.rm=T)) %>%
+  mutate(ideology_weight = pmin(1, lifetime_votes / 200)) %>%
+  group_by(party,year) %>%
+  mutate(nokken_poole_dim1 = (nokken_poole_dim1*ideology_weight) + 
+           (mean(nokken_poole_dim1, na.rm=T)*(1-ideology_weight)),
+         nominate_dim1 = (nominate_dim1*ideology_weight) + 
+           (mean(nominate_dim1, na.rm=T)*(1-ideology_weight))) %>%
+  select(-c(state,lifetime_votes)) %>%
+  filter(!is.na(nominate_dim1)) %>%
+  ungroup()
 
 # plot ideology by pvi ----------------------------------------------------
-
 highlight_list <- c('warren', 'booker', 'manchin', 'sinema', 'tester', 'capito', 
                     'romney', 'collins', 'lee', 'sanders', 'ossoff', 'gillibrand', 
                     'schatz', 'murkowski','baldwin','leahy','cruz','blackburn',
-                    'scott','hawley','cornyn','young','coons','murphy')
+                    'scott','hawley','cornyn','young','coons','murphy','warnock')
 
 senators_vv %>%
   filter(last_elec == 1) %>%
   ggplot(., aes(x = pvi, y = nominate_dim1, col = party)) +
-  geom_point(data = . %>% filter(!incumbent %in% toupper(highlight_list)), 
-             alpha=0.5,show.legend = F) +
+  geom_point(alpha=0.5,show.legend = F) +
   geom_text_repel(data = . %>% filter(incumbent %in% toupper(highlight_list)),
-            aes(label = incumbent),show.legend = F) +
+                  aes(label = incumbent),show.legend = F,min.segment.length = 0.1) +
   scale_color_manual(values=c("D"="#3498DB","R"="#E74C3C")) +
   scale_x_continuous(breaks = seq(-0.5,0.5,00.1), 
                      labels = function(x){round(x*100)}) +
@@ -109,16 +126,154 @@ senators_vv %>%
         plot.caption = element_text(hjust=1),
         legend.position = c(0.8,0.8))
 
-
+ggsave("pvi_nominate_scatter.png",width=8,height=6)
 
 # calculate estimated ideology --------------------------------------------
-# first, model D and R win rates by geography
-dem_win_model <- glmer(I(party == "D" ~ pvi + (1 | )))
+# pick the ideology measure we'll use from hereon down
+senators_vv <- senators_vv %>% mutate(ideology_score = nominate_dim1)
 
-# then, model ideology conditional on winning
-dem_ideology_model <- lm(nominate_dim1 ~ pvi, 
-                         data = senators_vv %>% filter(party == 'D'))
-rep_ideology_model <- lm(nominate_dim1 ~ pvi, 
-                         data = senators_vv %>% filter(party == 'R'))
+# first, model D and R win rates by geography and time
+dem_win_model <- bglmer(I(party == "D")  ~ pvi + region +
+                          (1 + pvi | region) + 
+                          pvi*I(year/1976) + pvi*I(year/1976)^2,
+                        data = senators_vv, 
+                        family = binomial(link = 'logit'))
+
+# then, model ideology conditional on party
+ideology_model <- lm(ideology_score ~ pvi + pvi*region + pvi*party +
+                       pvi*I(year/1976) + pvi*I(year/1976)^2,
+                     data = senators_vv)
+
+# center, scale and perform a YeoJohnson transformation
+# identify and remove variables with near zero variance
+# perform pca
+senators_train <- senators_vv %>% select(ideology_score, pvi, party, year)
+senators_train <- model.matrix(ideology_score ~ ., data = senators_train)  %>%
+  as.data.frame %>% bind_cols(select(senators_train,ideology_score))
+
+# specify that the resampling method is 
+fit_control <- trainControl(## 10-fold CV
+  method = "cv",
+  number = 10,
+  verbose = TRUE,
+  savePredictions="final",
+  index = createResample(senators_train$ideology_score, 10))
+
+# fit a k-nearest-neighbors model
+kknn_fit <- train(ideology_score ~ .*.,
+                  data = senators_train,
+                  method = "kknn",
+                  preProcess = c('center','scale','nzv'),
+                  trControl = fit_control,
+                  tuneLength = 10)
+
+# fit a ranger model
+ranger_fit <- train(ideology_score ~ .*.,
+                  data = senators_train,
+                  method = "ranger",
+                  preProcess = c('center','scale','nzv'),
+                  trControl = fit_control,
+                  tuneGrid = expand.grid(mtry = seq(1,dim(senators_train)[2]-1,2), min.node.size=5,
+                                         splitrule=c('extratrees','variance')))
+
+# bayes glm
+bayes_fit <- train(ideology_score ~ .*.,
+                    data = senators_train,
+                    method = "bayesglm",
+                    preProcess = c('center','scale','nzv'),
+                    trControl = fit_control,
+                    tuneLength = 10)
+
+# boosted linear regression
+linear_fit <- train(ideology_score ~ .*.,
+                 data = senators_train,
+                 method = "BstLm",
+                 preProcess = c('center','scale','nzv'),
+                 trControl = fit_control,
+                 tuneLength = 10)
+
+# fit a neural net 
+nnet_fit <- train(ideology_score ~ .*.,
+                 data = senators_train,
+                 method = "neuralnet",
+                 preProcess = c('center','scale','nzv'),
+                 trControl = fit_control)
+
+# dimensionality reduction
+pcr_fit <- train(ideology_score ~ .*.,
+                  data = senators_train,
+                  method = "pcr",
+                  preProcess = c('center','scale','nzv'),
+                  trControl = fit_control,
+                 tuneLength = 10)
 
 
+# ensemble model
+caret_ensemble <- caretStack(
+  all.models = c(kknn_fit, ranger_fit, bayes_fit, linear_fit, nnet_fit, pcr_fit),
+  method="gbm",
+  metric="RMSE",
+  trControl=trainControl(
+    method="cv",
+    number=10,
+    savePredictions="final",
+  ),
+  tuneLength = 10
+)
+
+# check predictions v fitted
+tibble(yhat = predict(caret_ensemble, senators_train), y=senators_train$ideology_score) %>%
+  ggplot(., aes(x=yhat, y=y)) +
+  geom_point() +
+  geom_abline()
+
+# now, generate expected ideology
+senators_vv$expected_dem_win_rate = predict(dem_win_model, newdata=senators_vv, type='response')
+
+senators_vv$expected_dem_ideology = predict(caret_ensemble,
+                                            newdata=senators_train %>% mutate(partyR = 0),
+                                            type='raw')
+senators_vv$expected_rep_ideology = predict(caret_ensemble,
+                                            newdata=senators_train %>% mutate(partyR = 1),
+                                            type='raw')
+
+# senators_vv$expected_dem_ideology = predict(ideology_model, 
+#                                             newdata=senators_vv %>% mutate(party = "D"), 
+#                                             type='response')
+# senators_vv$expected_rep_ideology = predict(ideology_model, 
+#                                             newdata=senators_vv %>% mutate(party = "R"), 
+#                                             type='response')
+
+senators_vv$expected_senator_ideology = 
+  (senators_vv$expected_dem_win_rate * senators_vv$expected_dem_ideology) + 
+  ((1 - senators_vv$expected_dem_win_rate) * senators_vv$expected_rep_ideology) 
+
+
+# look at expected v senator values
+ggplot(senators_vv, aes(expected_senator_ideology, ideology_score, col = party)) +
+  geom_point() + 
+  geom_abline()  +
+  labs(subtitle='actual v expeted nominate scores for the average d or r rep in a given state')
+
+senators_vv <- senators_vv %>%
+  mutate(ideology_over_replacement_senator = ideology_score - expected_senator_ideology) %>%
+  arrange(desc(ideology_over_replacement_senator))
+
+# most valuable dems
+senators_vv %>%
+  filter(last_elec == 1, party == "D") %>%
+  group_by(incumbent) %>%
+  summarize(average_VARS = mean(ideology_over_replacement_senator),
+            winner_v_expectations_residualized) %>%
+  arrange(average_VARS) %>%
+  ggplot(., aes(x=winner_v_expectations_residualized, y=-average_VARS)) +
+  geom_point(alpha = 0.1) +
+  geom_text_repel(aes(label = incumbent),min.segment.length = 0.01) +
+  labs(x = 'Most recent vote margin over expectations',
+       y = 'DW-NOMINATE score for ideology over replacement senator',
+       title = "Value Above Replacement Senators (VARS) for Democrats") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(-0.5,0.5,00.1), 
+                     labels = function(x){round(x*100)}) 
+
+ggsave("VARS.png",width=8,height=6)
