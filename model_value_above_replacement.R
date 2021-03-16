@@ -26,20 +26,20 @@ senate <- senate %>%
          actual_v_prediction = actual_dem_margin - pred_dem_margin ) %>%
   arrange(desc(actual_v_prediction))
 
-# then residualize by year
+# then residualize by year (shrunk toward 0)
 senate <- senate %>%
   group_by(year) %>%
-  mutate(actual_v_prediction_resid = actual_v_prediction - median(actual_v_prediction)) %>%
+  mutate(actual_v_prediction_resid = actual_v_prediction - (median(actual_v_prediction)/2)) %>%
   ungroup()
 
-# and by region over time
+# and by region over time (shrunk toward 0)
 senate <- senate %>%
   left_join(read_csv('data/state_region_crosswalk.csv') %>% 
               select(state_abbv,region = region_computed))
 
 senate <- senate %>%
   group_by(region) %>%
-  mutate(actual_v_prediction_resid = actual_v_prediction - median(actual_v_prediction)) %>%
+  mutate(actual_v_prediction_resid = actual_v_prediction_resid - (median(actual_v_prediction)/2)) %>%
   ungroup()
 
 # now, view
@@ -105,7 +105,7 @@ highlight_list <- c('warren', 'booker', 'manchin', 'sinema', 'tester', 'capito',
                     'romney', 'collins', 'lee', 'sanders', 'ossoff', 'gillibrand', 
                     'schatz', 'murkowski','baldwin','leahy','cruz','blackburn',
                     'scott','hawley','cornyn','young','coons','murphy','warnock',
-                    'klobuchar')
+                    'klobuchar','shaheen')
 
 senators_vv %>%
   filter(last_elec == 1) %>%
@@ -161,14 +161,6 @@ fit_control <- trainControl(## 10-fold CV
   savePredictions="final",
   index = createResample(senators_train$ideology_score, 10))
 
-# fit a k-nearest-neighbors model
-kknn_fit <- train(ideology_score ~ .*.,
-                  data = senators_train,
-                  method = "kknn",
-                  preProcess = c('center','scale','nzv'),
-                  trControl = fit_control,
-                  tuneLength = 10)
-
 # fit a ranger model
 ranger_fit <- train(ideology_score ~ .*.,
                   data = senators_train,
@@ -178,21 +170,13 @@ ranger_fit <- train(ideology_score ~ .*.,
                   tuneGrid = expand.grid(mtry = seq(1,dim(senators_train)[2]-1,2), min.node.size=5,
                                          splitrule=c('extratrees','variance')))
 
-# bayes glm
-bayes_fit <- train(ideology_score ~ .*.,
-                    data = senators_train,
-                    method = "bayesglm",
-                    preProcess = c('center','scale','nzv'),
-                    trControl = fit_control,
-                    tuneLength = 10)
-
 # boosted linear regression
 linear_fit <- train(ideology_score ~ .*.,
                  data = senators_train,
                  method = "BstLm",
                  preProcess = c('center','scale','nzv'),
                  trControl = fit_control,
-                 tuneLength = 10)
+                 tuneLength = 20)
 
 # fit a neural net 
 nnet_fit <- train(ideology_score ~ .*.,
@@ -209,18 +193,34 @@ pcr_fit <- train(ideology_score ~ .*.,
                   trControl = fit_control,
                  tuneLength = 10)
 
+# stepwise aic
+aic_fit <- train(ideology_score ~ .*.,
+             data = senators_train,
+             method = "lmStepAIC",
+             preProcess = c('center','scale','nzv'),
+             trControl = fit_control,
+             tuneLength = 20)
 
-# ensemble model
+# glmnet
+glmnet_fit <- train(ideology_score ~ .*.,
+                 data = senators_train,
+                 method = "glmnet",
+                 preProcess = c('center','scale','nzv'),
+                 trControl = fit_control,
+                 tuneLength = 20)
+
+# ensemble model, a boosted glm
 caret_ensemble <- caretStack(
-  all.models = c(kknn_fit, ranger_fit, bayes_fit, linear_fit, nnet_fit, pcr_fit),
-  method="gbm",
+  all.models = c(ranger_fit, linear_fit, nnet_fit, 
+                 pcr_fit, aic_fit, glmnet_fit),
+  method="glmboost",
   metric="RMSE",
   trControl=trainControl(
     method="cv",
     number=10,
     savePredictions="final",
   ),
-  tuneLength = 10
+  tuneLength = 20
 )
 
 # check predictions v fitted
@@ -235,10 +235,10 @@ tibble(yhat = predict(caret_ensemble, senators_train), y=senators_train$ideology
 
 senators_vv$expected_dem_win_rate = predict(dem_win_model, newdata=senators_vv, type='response')
 
-senators_vv$expected_dem_ideology = predict(caret_ensemble,
+senators_vv$expected_dem_ideology = predict(linear_fit,
                                             newdata=senators_train %>% mutate(partyR = 0),
                                             type='raw')
-senators_vv$expected_rep_ideology = predict(caret_ensemble,
+senators_vv$expected_rep_ideology = predict(linear_fit,
                                             newdata=senators_train %>% mutate(partyR = 1),
                                             type='raw')
 
@@ -260,6 +260,7 @@ ggplot(senators_vv, aes(expected_senator_ideology, ideology_score, col = party))
   geom_abline()  +
   labs(subtitle='actual v expeted nominate scores for the average d or r rep in a given state')
 
+
 senators_vv <- senators_vv %>%
   mutate(ideology_over_replacement_senator = ideology_score - expected_senator_ideology) %>%
   arrange(desc(ideology_over_replacement_senator))
@@ -273,7 +274,7 @@ senators_vv %>%
   arrange(average_VARS) %>%
   ggplot(., aes(x=winner_v_expectations_residualized, y=-average_VARS)) +
   geom_point(alpha = 0.5) +
-  geom_text_repel(data = . %>% filter(incumbent %in% toupper(highlight_list)),
+  geom_text_repel(#data = . %>% filter(incumbent %in% toupper(highlight_list)),
                   aes(label = incumbent),min.segment.length = 0.01) +
   labs(x = 'Most recent vote margin over expectations',
        y = 'DW-NOMINATE score for ideology over replacement senator',
