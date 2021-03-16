@@ -104,7 +104,8 @@ senators_vv <- senators_vv %>%
 highlight_list <- c('warren', 'booker', 'manchin', 'sinema', 'tester', 'capito', 
                     'romney', 'collins', 'lee', 'sanders', 'ossoff', 'gillibrand', 
                     'schatz', 'murkowski','baldwin','leahy','cruz','blackburn',
-                    'scott','hawley','cornyn','young','coons','murphy','warnock')
+                    'scott','hawley','cornyn','young','coons','murphy','warnock',
+                    'klobuchar')
 
 senators_vv %>%
   filter(last_elec == 1) %>%
@@ -128,7 +129,8 @@ senators_vv %>%
 
 ggsave("pvi_nominate_scatter.png",width=8,height=6)
 
-# calculate estimated ideology --------------------------------------------
+
+# run the models for vote margin and ideology -----------------------------
 # pick the ideology measure we'll use from hereon down
 senators_vv <- senators_vv %>% mutate(ideology_score = nominate_dim1)
 
@@ -227,7 +229,10 @@ tibble(yhat = predict(caret_ensemble, senators_train), y=senators_train$ideology
   geom_point() +
   geom_abline()
 
-# now, generate expected ideology
+
+# generate ideology above replacement and make a graph --------------------
+
+
 senators_vv$expected_dem_win_rate = predict(dem_win_model, newdata=senators_vv, type='response')
 
 senators_vv$expected_dem_ideology = predict(caret_ensemble,
@@ -267,8 +272,9 @@ senators_vv %>%
             winner_v_expectations_residualized) %>%
   arrange(average_VARS) %>%
   ggplot(., aes(x=winner_v_expectations_residualized, y=-average_VARS)) +
-  geom_point(alpha = 0.1) +
-  geom_text_repel(aes(label = incumbent),min.segment.length = 0.01) +
+  geom_point(alpha = 0.5) +
+  geom_text_repel(data = . %>% filter(incumbent %in% toupper(highlight_list)),
+                  aes(label = incumbent),min.segment.length = 0.01) +
   labs(x = 'Most recent vote margin over expectations',
        y = 'DW-NOMINATE score for ideology over replacement senator',
        title = "Value Above Replacement Senators (VARS) for Democrats") +
