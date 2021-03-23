@@ -288,7 +288,7 @@ senators_vv %>%
   geom_text_repel(data = . %>% filter(incumbent %in% toupper(highlight_list)),
                   aes(label = incumbent),min.segment.length = 0.01) +
   labs(x = 'Most recent vote margin over expectations**',
-       y = 'DW-NOMINATE "ideology" score over over replacement senator',
+       y = 'DW-NOMINATE "ideology" score over over replacement senator\nHigher is more liberal than expected',
        title = "Political Value above replacement member (P-VALUE) for Democratic Senators",
        col = 'Home state \npartisan lean*',
        caption = "*At the time of the senator's most recent election\n**Controlling for state partisan lean, year, and region") +
