@@ -13,7 +13,9 @@ source("calculate_optimal_pvi.R")
 # electoral value over replacement ----------------------------------------
 # read data
 senate <- read_csv('output/senate_results_with_pvi.csv') %>%
-  mutate(dem_last_name = gsub("MASTO","CORTEZ MASTO",dem_last_name))
+  mutate(dem_last_name = gsub("MASTO","CORTEZ MASTO",dem_last_name),
+         winning_party = case_when(winning_party == "D" ~ "Democratic",
+                                   winning_party == "R" ~ "Republican"))
 
 # vote_model to predict dem share
 vote_model <- lm(dem_margin ~ 0 + pvi, data = senate)
@@ -48,10 +50,10 @@ senators <- senate %>%
   group_by(district_id)  %>%
   mutate(last_elec = row_number()) %>%
   # code in winner direction
-  mutate(incumbent = ifelse(winning_party == 'D', dem_last_name, rep_last_name),
-         winner_v_expectations_residualized = ifelse(winning_party == 'D', actual_v_prediction_resid, -1*actual_v_prediction_resid),
-         winner_expected = ifelse(winning_party == 'D', pred_dem_margin, -1*pred_dem_margin),
-         winner_actual = ifelse(winning_party == 'D', actual_dem_margin, -1*actual_dem_margin)) %>%
+  mutate(incumbent = ifelse(winning_party == "Democratic", dem_last_name, rep_last_name),
+         winner_v_expectations_residualized = ifelse(winning_party == "Democratic", actual_v_prediction_resid, -1*actual_v_prediction_resid),
+         winner_expected = ifelse(winning_party == "Democratic", pred_dem_margin, -1*pred_dem_margin),
+         winner_actual = ifelse(winning_party == "Democratic", actual_dem_margin, -1*actual_dem_margin)) %>%
   select(seat = district_id, 
          incumbent, 
          party = winning_party,
@@ -117,11 +119,11 @@ senators_vv %>%
   geom_point(alpha=0.5,show.legend = F) +
   geom_text_repel(data = . %>% filter(incumbent %in% toupper(highlight_list)),
                   aes(label = incumbent),show.legend = F,min.segment.length = 0.1) +
-  scale_color_manual(values=c("D"="#3498DB","R"="#E74C3C")) +
+  scale_color_manual(values=c("Democratic"="#3498DB","Republican"="#E74C3C")) +
   scale_x_continuous(breaks = seq(-0.5,0.5,00.1), 
                      labels = function(x){round(x*100)}) +
-  geom_smooth(method='lm',se=F,aes(group=1),col='black',linetype=2) +
-  geom_smooth(method='lm',se=F,alpha=0.5,size=0.8,linetype=2) +
+  geom_smooth(method='lm',se=F,aes(group=1),col='black',size=0.8,linetype=2) +
+  geom_smooth(method='lm',se=F,alpha=0.5,size=1,linetype=2) +
   labs(x="Home state's federal partisan lean*",
        y='DW-NOMINATE "ideology" scores',
        caption="*At the time of the senator's most recent election",
@@ -131,7 +133,7 @@ senators_vv %>%
         plot.caption = element_text(hjust=1),
         legend.position = c(0.8,0.8))
 
-ggsave("pvi_nominate_scatter.png",width=8,height=6)
+ggsave("senate_pvi_nominate_scatter.png",width=8,height=6)
 
 
 # run the models for vote margin and ideology -----------------------------
@@ -139,7 +141,7 @@ ggsave("pvi_nominate_scatter.png",width=8,height=6)
 senators_vv <- senators_vv %>% mutate(ideology_score = nominate_dim1)
 
 # first, model D and R win rates by geography and time
-dem_win_model <- bglmer(I(party == "D")  ~ pvi + region +
+dem_win_model <- bglmer(I(party == "Democratic")  ~ pvi + region +
                           (1 + pvi | region) + 
                           pvi*I(year/1976) + pvi*I(year/1976)^2,
                         data = senators_vv, 
@@ -160,10 +162,10 @@ senators_train <- model.matrix(ideology_score ~ ., data = senators_train)  %>%
 # specify that the resampling method is 
 fit_control <- trainControl(## 10-fold CV
   method = "cv",
-  number = 5,
+  number = 10,
   verbose = TRUE,
   savePredictions="final",
-  index = createResample(senators_train$ideology_score, 5))
+  index = createResample(senators_train$ideology_score, 10))
 
 # fit a ranger model
 ranger_fit <- train(ideology_score ~ .*.,
@@ -240,17 +242,17 @@ tibble(yhat = predict(caret_ensemble, senators_train), y=senators_train$ideology
 senators_vv$expected_dem_win_rate = predict(dem_win_model, newdata=senators_vv, type='response')
 
 senators_vv$expected_dem_ideology = predict(linear_fit,
-                                            newdata=senators_train %>% mutate(partyR = 0),
+                                            newdata=senators_train %>% mutate(partyRepublican = 0),
                                             type='raw')
 senators_vv$expected_rep_ideology = predict(linear_fit,
-                                            newdata=senators_train %>% mutate(partyR = 1),
+                                            newdata=senators_train %>% mutate(partyRepublican = 1),
                                             type='raw')
 
 # senators_vv$expected_dem_ideology = predict(ideology_model, 
-#                                             newdata=senators_vv %>% mutate(party = "D"), 
+#                                             newdata=senators_vv %>% mutate(party = "Democratic"), 
 #                                             type='response')
 # senators_vv$expected_rep_ideology = predict(ideology_model, 
-#                                             newdata=senators_vv %>% mutate(party = "R"), 
+#                                             newdata=senators_vv %>% mutate(party = "Republican"), 
 #                                             type='response')
 
 senators_vv$expected_senator_ideology = 
@@ -271,20 +273,23 @@ senators_vv <- senators_vv %>%
 
 # most valuable dems
 senators_vv %>%
-  filter(last_elec == 1, party == "D") %>%
+  filter(last_elec == 1, party == "Democratic") %>%
   group_by(incumbent,pvi=pvi*100) %>%
   summarize(average_VARS = mean(ideology_over_replacement_senator),
             winner_v_expectations_residualized) %>%
   arrange(average_VARS) %>%
   ggplot(., aes(x=winner_v_expectations_residualized, y=-average_VARS,
                 col=pvi)) +
-  scale_color_gradient2(high="#3498DB",low="#E74C3C",mid='#6D6D6D',midpoint=0) +
+  scale_color_gradient2(high="#3498DB",low="#E74C3C",mid='#8E44AD',midpoint=0,
+                        limits = c(-20,20),
+                        labels = c("R+ 20+","10","0","10","D+ 20+"),
+                        oob = scales::squish) +
   geom_point(alpha = 0.5) +
   geom_text_repel(data = . %>% filter(incumbent %in% toupper(highlight_list)),
                   aes(label = incumbent),min.segment.length = 0.01) +
   labs(x = 'Most recent vote margin over expectations**',
        y = 'DW-NOMINATE "ideology" score over over replacement senator',
-       title = "Value Above Replacement Senator (VARS) for Democrats",
+       title = "Political Value above replacement member (P-VALUE) for Democratic Senators",
        col = 'Home state \npartisan lean*',
        caption = "*At the time of the senator's most recent election\n**Controlling for state partisan lean, year, and region") +
   scale_x_continuous(breaks = seq(-0.5,0.5,00.1), 
@@ -294,4 +299,4 @@ senators_vv %>%
         plot.caption = element_text(hjust=1),
         legend.position = c(0.85,0.4))
 
-ggsave("VARS.png",width=8,height=6)
+ggsave("p_value_senate.png",width=8,height=6)
