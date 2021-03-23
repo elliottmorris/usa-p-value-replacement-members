@@ -171,5 +171,3 @@ house %>%
 
 ggsave('p_value_house.png',width=8,height=6)
 
-
-
