@@ -162,7 +162,7 @@ house %>%
   labs(title = "Political Value above replacement member (P-VALUE) for Democratic House Reps",
        x="Democratic House margin minus Biden margin",
        y='DW-NOMINATE "ideology" scores over replacement member\nAverage of first two dimensions\nHigher is more liberal than expected',
-       col='Home district 2020 Biden margin') +
+       col='Home district\n2020 Biden margin') +
   theme_minimal() +
   theme(panel.grid.minor = element_blank(),
         plot.caption = element_text(hjust=1),
