@@ -47,7 +47,7 @@ house <- house %>% mutate(nominate_mean = (nominate_dim1 + nominate_dim2)/2)
 
 highlight_list <- c("OMAR","KATKO","UPTON","OCASIO-CORTEZ","MASSIE","GAETZ","LEVIN","KIND","CARTWRIGHT","GOLDEN",
   "CASE","HIGGINS","CUELLA","CORREA","CARTER","GARCIA","CRENSHAW","KATKO","BALDERSON",
-  "NADLER","PHILLIPS","SMITH","BACON","VELA","DOYLE","GOSAR","PELOSI")
+  "NADLER","PHILLIPS","SMITH","BACON","VELA","DOYLE","GOSAR","PELOSI","KILDEE")
  
 # for fun, look at ideology v Biden vote
 ggplot(house, aes(x = biden_2020 - trump_2020, y = nominate_dim1, col = party)) +
@@ -144,27 +144,29 @@ house$probability_dem = predict(win_model,newdata = house,type='response')
 house <- house %>%
   mutate(expected_ideology = 
            (predict(dem_ideology_model, .)*probability_dem) + 
-           (predict(rep_ideology_model, .)*(1-probability_dem)) )
+           (predict(rep_ideology_model, .)*(1-probability_dem)) ,
+         VALUE = nominate_mean - expected_ideology)
 
 
-ggplot(house, aes(x = house_dem_beat_pres_margin, y = nominate_mean - expected_ideology, col = biden_2020 - trump_2020)) +
+house %>%
+  filter(party == "Democratic") %>%
+  ggplot(., aes(x = house_dem_beat_pres_margin, y = -VALUE, col = biden_2020 - trump_2020)) +
   geom_point(alpha = 0.5) +
   geom_text_repel(data = . %>% filter(last_name %in% toupper(highlight_list)),
                   aes(label = last_name),min.segment.length = 0.01,show.legend = F) +
   theme_minimal() +
-  #scale_color_manual(values=c("Democratic"="#3498DB","Republican"="#E74C3C")) +
   scale_color_gradient2(high="#3498DB",low="#E74C3C",mid='#8E44AD',midpoint=0,
                         limits = c(-40,40),
                         labels = c("R+ 40+","20","0","20","D+ 40+"),
                         oob = scales::squish) +
   labs(title = "Political Value above replacement member (P-VALUE) for Democratic House Reps",
        x="Democratic House margin minus Biden margin",
-       y='"Ideology" scores over replacement member\nAverage of first two dimensions\nLower is more liberal than expected',
+       y='DW-NOMINATE "ideology" scores over replacement member\nAverage of first two dimensions\nhigher is more liberal than expected',
        col='Home district 2020 Biden margin') +
   theme_minimal() +
   theme(panel.grid.minor = element_blank(),
         plot.caption = element_text(hjust=1),
-        legend.position = c(0.2,0.8))
+        legend.position = c(0.15,0.25))
 
 
 ggsave('p_value_house.png',width=8,height=6)
